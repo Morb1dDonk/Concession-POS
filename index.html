@@ -391,6 +391,49 @@
     color: #666;
     width: 100%;
   }
+
+  .chili-picker {
+    display: none;
+    margin-bottom: 16px;
+    background: white;
+    border: 1px solid #d3d1c7;
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .chili-picker h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .chili-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .chili-btn {
+    padding: 16px 8px;
+    border: 1px solid #d3d1c7;
+    border-radius: 8px;
+    background: white;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: transform 0.05s;
+  }
+  .chili-btn:active { transform: scale(0.96); }
+  .chili-btn.yes {
+    border-color: #A32D2D;
+    color: #A32D2D;
+  }
+  .chili-btn.yes:hover { background: #fceaeb; }
+  .chili-btn.no { color: #666; }
+  .chili-btn.no:hover { background: #f5f5f0; }
+  .chili-price {
+    font-size: 12px;
+    color: #888;
+    font-weight: 400;
+    margin-top: 2px;
+  }
 </style>
 </head>
 <body>
@@ -420,6 +463,14 @@
       <button class="soda-btn water"          data-soda="Water">Water</button>
     </div>
     <button id="sodaCancel" class="soda-cancel">Cancel</button>
+  </div>
+
+  <div id="chiliPicker" class="chili-picker">
+    <h3 id="chiliPickerTitle">Add chili?</h3>
+    <div class="chili-options">
+      <button class="chili-btn no"  data-chili="no">No chili</button>
+      <button class="chili-btn yes" data-chili="yes">Add chili<div class="chili-price">+$1.00</div></button>
+    </div>
   </div>
 
   <div class="main-grid">
@@ -503,6 +554,7 @@
   const ITEMS = [
     { id: 'burger',       name: 'Hamburger',     price: 5, icon: 'burger' },
     { id: 'hotdog',       name: 'Hot Dog',       price: 4, icon: 'hotdog' },
+    { id: 'chili_pie',    name: 'Chili Pie',     price: 4, icon: 'chili_pie' },
     { id: 'chips',        name: 'Chips',         price: 1, icon: 'chips' },
     { id: 'soda',         name: 'Soda / Water',  price: 2, icon: 'soda' },
     { id: 'candy',        name: 'Candy',         price: 1, icon: 'candy' },
@@ -547,6 +599,29 @@
       <rect x="18" y="20" width="28" height="24" rx="4" fill="#ED93B1"/>
       <path d="M56 26 L46 22 L46 42 L56 38 Z" fill="#D4537E"/>
       <path d="M22 26 L42 38 M22 38 L42 26" stroke="#FBEAF0" stroke-width="2"/>
+    </svg>`,
+    chili_pie: `<svg viewBox="0 0 64 64" width="64" height="64" xmlns="http://www.w3.org/2000/svg">
+      <!-- bowl/plate -->
+      <ellipse cx="32" cy="48" rx="28" ry="6" fill="#888780"/>
+      <path d="M6 44 Q32 52 58 44 L56 36 L8 36 Z" fill="#B4B2A9"/>
+      <!-- chili base -->
+      <ellipse cx="32" cy="36" rx="24" ry="6" fill="#7B2E14"/>
+      <ellipse cx="32" cy="34" rx="22" ry="5" fill="#A32D2D"/>
+      <!-- chunks -->
+      <circle cx="22" cy="33" r="2.5" fill="#7B2E14"/>
+      <circle cx="30" cy="32" r="2" fill="#5F2010"/>
+      <circle cx="38" cy="34" r="2.5" fill="#7B2E14"/>
+      <circle cx="42" cy="31" r="1.8" fill="#5F2010"/>
+      <!-- beans -->
+      <ellipse cx="26" cy="35" rx="1.5" ry="1" fill="#3B2010"/>
+      <ellipse cx="34" cy="36" rx="1.5" ry="1" fill="#3B2010"/>
+      <ellipse cx="44" cy="35" rx="1.5" ry="1" fill="#3B2010"/>
+      <!-- cheese on top -->
+      <path d="M14 30 L18 28 L22 30 L26 28 L30 30 L34 28 L38 30 L42 28 L46 30 L50 28" stroke="#FAC775" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <!-- chips sticking up -->
+      <polygon points="14,28 20,14 24,28" fill="#FAC775" stroke="#BA7517" stroke-width="0.5"/>
+      <polygon points="40,28 46,12 50,28" fill="#FAC775" stroke="#BA7517" stroke-width="0.5"/>
+      <polygon points="28,28 32,10 36,28" fill="#FAC775" stroke="#BA7517" stroke-width="0.5"/>
     </svg>`,
     burger_combo: `<svg viewBox="0 0 80 64" width="80" height="64" xmlns="http://www.w3.org/2000/svg">
       <!-- burger -->
@@ -605,6 +680,8 @@
   let paymentMethod = 'cash';
   let sodaTypes = {}; // tracks count of each drink type in current cart
   let pendingSodaContext = null; // tracks why we opened picker (standalone soda or combo)
+  let pendingChiliContext = null; // tracks the hot dog item awaiting chili decision
+  let chiliAddOns = 0; // count of chili add-ons in current cart
 
   function loadStats() {
     const today = new Date().toDateString();
@@ -643,8 +720,11 @@
       <div class="item-price">$${item.price.toFixed(2)}</div>
     `;
     btn.addEventListener('click', () => {
-      // Items that include a drink need a drink-type picker first
-      if (item.id === 'soda' || item.id === 'burger_combo' || item.id === 'hotdog_combo') {
+      // Hot dog items ask about chili first
+      if (item.id === 'hotdog' || item.id === 'hotdog_combo') {
+        openChiliPicker(item);
+      } else if (item.id === 'soda' || item.id === 'burger_combo') {
+        // Items that include a drink need a drink-type picker
         openSodaPicker(item);
       } else {
         addToCart(item);
@@ -653,8 +733,8 @@
     menuEl.appendChild(btn);
   });
 
-  function openSodaPicker(item) {
-    pendingSodaContext = item;
+  function openSodaPicker(item, withChili) {
+    pendingSodaContext = { item, withChili: !!withChili };
     const title = item.id === 'soda'
       ? 'Which drink?'
       : `Which drink for the ${item.name}?`;
@@ -668,41 +748,105 @@
     pendingSodaContext = null;
   }
 
+  function openChiliPicker(item) {
+    pendingChiliContext = item;
+    const title = item.id === 'hotdog'
+      ? 'Add chili to the hot dog?'
+      : 'Add chili to the hot dog combo?';
+    document.getElementById('chiliPickerTitle').textContent = title;
+    document.getElementById('chiliPicker').style.display = 'block';
+    document.getElementById('chiliPicker').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function closeChiliPicker() {
+    document.getElementById('chiliPicker').style.display = 'none';
+    pendingChiliContext = null;
+  }
+
   // Wire up soda picker buttons
   document.querySelectorAll('.soda-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const sodaName = btn.dataset.soda;
       if (pendingSodaContext) {
-        addToCart(pendingSodaContext, sodaName);
+        addToCart(pendingSodaContext.item, sodaName, pendingSodaContext.withChili);
       }
       closeSodaPicker();
     });
   });
   document.getElementById('sodaCancel').addEventListener('click', closeSodaPicker);
 
-  function addToCart(item, sodaName) {
-    if (!cart[item.id]) cart[item.id] = { ...item, qty: 0, drinks: [] };
+  // Wire up chili picker buttons
+  document.querySelectorAll('.chili-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const withChili = btn.dataset.chili === 'yes';
+      const item = pendingChiliContext;
+      closeChiliPicker();
+      if (!item) return;
+      // Hot dog combo still needs the drink picker after chili choice
+      if (item.id === 'hotdog_combo') {
+        openSodaPicker(item, withChili);
+      } else {
+        addToCart(item, null, withChili);
+      }
+    });
+  });
+
+  function addToCart(item, sodaName, withChili) {
+    if (!cart[item.id]) cart[item.id] = { ...item, qty: 0, drinks: [], chili: [] };
     cart[item.id].qty++;
     if (sodaName) {
       cart[item.id].drinks.push(sodaName);
       sodaTypes[sodaName] = (sodaTypes[sodaName] || 0) + 1;
     }
+    // Track chili per unit on this line (true/false)
+    if (item.id === 'hotdog' || item.id === 'hotdog_combo') {
+      cart[item.id].chili.push(!!withChili);
+      if (withChili) {
+        chiliAddOns++;
+        // Add a Chili add-on line item for transparent pricing
+        if (!cart.chili_addon) {
+          cart.chili_addon = {
+            id: 'chili_addon',
+            name: 'Chili (add-on)',
+            price: 1,
+            icon: null,
+            qty: 0,
+            drinks: [],
+            chili: [],
+            hidden: false
+          };
+        }
+        cart.chili_addon.qty++;
+      }
+    }
     renderCart();
   }
 
   function removeFromCart(id) {
-    if (cart[id]) {
-      cart[id].qty--;
-      // Pop the most recent drink for this line and decrement its counter
-      if (cart[id].drinks && cart[id].drinks.length > 0) {
-        const removed = cart[id].drinks.pop();
-        if (removed && sodaTypes[removed]) {
-          sodaTypes[removed]--;
-          if (sodaTypes[removed] <= 0) delete sodaTypes[removed];
-        }
+    if (!cart[id]) return;
+
+    // Removing a hot dog or hot dog combo? Also remove its chili add-on if that unit had chili
+    if (id === 'hotdog' || id === 'hotdog_combo') {
+      const hadChili = cart[id].chili && cart[id].chili.length > 0
+        ? cart[id].chili.pop()
+        : false;
+      if (hadChili && cart.chili_addon) {
+        cart.chili_addon.qty--;
+        chiliAddOns = Math.max(0, chiliAddOns - 1);
+        if (cart.chili_addon.qty <= 0) delete cart.chili_addon;
       }
-      if (cart[id].qty <= 0) delete cart[id];
     }
+
+    cart[id].qty--;
+    // Pop the most recent drink for this line and decrement its counter
+    if (cart[id].drinks && cart[id].drinks.length > 0) {
+      const removed = cart[id].drinks.pop();
+      if (removed && sodaTypes[removed]) {
+        sodaTypes[removed]--;
+        if (sodaTypes[removed] <= 0) delete sodaTypes[removed];
+      }
+    }
+    if (cart[id].qty <= 0) delete cart[id];
     renderCart();
   }
 
@@ -716,15 +860,24 @@
         const drinkLabel = (it.drinks && it.drinks.length > 0)
           ? `<div style="font-size:11px;color:#888;margin-top:2px">${it.drinks.join(', ')}</div>`
           : '';
+        const chiliLabel = (it.chili && it.chili.some(c => c))
+          ? `<div style="font-size:11px;color:#A32D2D;margin-top:2px">with chili${it.chili.filter(c => c).length > 1 ? ' (×' + it.chili.filter(c => c).length + ')' : ''}</div>`
+          : '';
+        // Auto-managed add-ons (like chili) can't be removed directly
+        const isAutoManaged = it.id === 'chili_addon';
+        const minusBtn = isAutoManaged
+          ? `<span style="font-size:11px;color:#888;font-style:italic">auto</span>`
+          : `<button data-id="${it.id}" class="rmBtn rm-btn">−</button>`;
         return `
         <div class="cart-row">
           <div>
             <div style="font-weight:500">${it.name}</div>
             <div style="font-size:12px;color:#666">$${it.price.toFixed(2)} × ${it.qty}</div>
             ${drinkLabel}
+            ${chiliLabel}
           </div>
           <div style="display:flex;align-items:center;gap:10px">
-            <button data-id="${it.id}" class="rmBtn rm-btn">−</button>
+            ${minusBtn}
             <span style="font-weight:500;min-width:56px;text-align:right">$${(it.price * it.qty).toFixed(2)}</span>
           </div>
         </div>
@@ -787,6 +940,7 @@
   document.getElementById('clearBtn').addEventListener('click', () => {
     cart = {};
     sodaTypes = {};
+    chiliAddOns = 0;
     document.getElementById('cashInput').value = '';
     document.getElementById('statusMsg').textContent = '';
     renderCart();
@@ -884,6 +1038,8 @@
       hotdogs: totalHotdogs,
       burgerCombos: burgerComboQty,
       hotdogCombos: hotdogComboQty,
+      chiliPies: cart.chili_pie?.qty || 0,
+      chiliAddOns: chiliAddOns,
       chips: totalChips,
       sodas: totalSodas,
       drPepper:     sodaTypes['Dr Pepper']      || 0,
@@ -959,6 +1115,7 @@
     setTimeout(() => {
       cart = {};
       sodaTypes = {};
+      chiliAddOns = 0;
       document.getElementById('cashInput').value = '';
       completeBtn.classList.remove('success');
       completeBtn.innerHTML = 'Complete sale';
