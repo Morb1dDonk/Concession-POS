@@ -340,6 +340,57 @@
     margin-bottom: 12px;
     display: none;
   }
+
+  .soda-picker {
+    display: none;
+    margin-bottom: 16px;
+    background: white;
+    border: 1px solid #d3d1c7;
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .soda-picker h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .soda-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .soda-btn {
+    padding: 14px 8px;
+    border: 1px solid #d3d1c7;
+    border-radius: 8px;
+    background: white;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #333;
+    transition: transform 0.05s;
+  }
+  .soda-btn:active { transform: scale(0.96); }
+  .soda-btn.dr-pepper      { border-color: #7B2E2E; color: #7B2E2E; }
+  .soda-btn.diet-dr-pepper { border-color: #888780; color: #5F5E5A; }
+  .soda-btn.coke           { border-color: #C8102E; color: #C8102E; }
+  .soda-btn.diet-coke      { border-color: #888780; color: #5F5E5A; }
+  .soda-btn.sprite         { border-color: #2E8B57; color: #2E8B57; }
+  .soda-btn.pepsi          { border-color: #004B93; color: #004B93; }
+  .soda-btn.water          { border-color: #378ADD; color: #378ADD; }
+  .soda-btn:hover { background: #f5f5f0; }
+
+  .soda-cancel {
+    background: transparent;
+    border: 1px solid #d3d1c7;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #666;
+    width: 100%;
+  }
 </style>
 </head>
 <body>
@@ -356,6 +407,20 @@
   </div>
 
   <div id="pendingBadge" class="pending-badge"></div>
+
+  <div id="sodaPicker" class="soda-picker">
+    <h3 id="sodaPickerTitle">Which drink?</h3>
+    <div class="soda-grid">
+      <button class="soda-btn dr-pepper"      data-soda="Dr Pepper">Dr Pepper</button>
+      <button class="soda-btn diet-dr-pepper" data-soda="Diet Dr Pepper">Diet Dr Pepper</button>
+      <button class="soda-btn coke"           data-soda="Coca Cola">Coca Cola</button>
+      <button class="soda-btn diet-coke"      data-soda="Diet Coke">Diet Coke</button>
+      <button class="soda-btn sprite"         data-soda="Sprite">Sprite</button>
+      <button class="soda-btn pepsi"          data-soda="Pepsi">Pepsi</button>
+      <button class="soda-btn water"          data-soda="Water">Water</button>
+    </div>
+    <button id="sodaCancel" class="soda-cancel">Cancel</button>
+  </div>
 
   <div class="main-grid">
     <div>
@@ -538,6 +603,8 @@
   let stats = loadStats();
   let pendingQueue = JSON.parse(localStorage.getItem('pos:pending') || '[]');
   let paymentMethod = 'cash';
+  let sodaTypes = {}; // tracks count of each drink type in current cart
+  let pendingSodaContext = null; // tracks why we opened picker (standalone soda or combo)
 
   function loadStats() {
     const today = new Date().toDateString();
@@ -575,19 +642,65 @@
       <div class="item-name">${item.name}</div>
       <div class="item-price">$${item.price.toFixed(2)}</div>
     `;
-    btn.addEventListener('click', () => addToCart(item));
+    btn.addEventListener('click', () => {
+      // Items that include a drink need a drink-type picker first
+      if (item.id === 'soda' || item.id === 'burger_combo' || item.id === 'hotdog_combo') {
+        openSodaPicker(item);
+      } else {
+        addToCart(item);
+      }
+    });
     menuEl.appendChild(btn);
   });
 
-  function addToCart(item) {
-    if (!cart[item.id]) cart[item.id] = { ...item, qty: 0 };
+  function openSodaPicker(item) {
+    pendingSodaContext = item;
+    const title = item.id === 'soda'
+      ? 'Which drink?'
+      : `Which drink for the ${item.name}?`;
+    document.getElementById('sodaPickerTitle').textContent = title;
+    document.getElementById('sodaPicker').style.display = 'block';
+    document.getElementById('sodaPicker').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function closeSodaPicker() {
+    document.getElementById('sodaPicker').style.display = 'none';
+    pendingSodaContext = null;
+  }
+
+  // Wire up soda picker buttons
+  document.querySelectorAll('.soda-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sodaName = btn.dataset.soda;
+      if (pendingSodaContext) {
+        addToCart(pendingSodaContext, sodaName);
+      }
+      closeSodaPicker();
+    });
+  });
+  document.getElementById('sodaCancel').addEventListener('click', closeSodaPicker);
+
+  function addToCart(item, sodaName) {
+    if (!cart[item.id]) cart[item.id] = { ...item, qty: 0, drinks: [] };
     cart[item.id].qty++;
+    if (sodaName) {
+      cart[item.id].drinks.push(sodaName);
+      sodaTypes[sodaName] = (sodaTypes[sodaName] || 0) + 1;
+    }
     renderCart();
   }
 
   function removeFromCart(id) {
     if (cart[id]) {
       cart[id].qty--;
+      // Pop the most recent drink for this line and decrement its counter
+      if (cart[id].drinks && cart[id].drinks.length > 0) {
+        const removed = cart[id].drinks.pop();
+        if (removed && sodaTypes[removed]) {
+          sodaTypes[removed]--;
+          if (sodaTypes[removed] <= 0) delete sodaTypes[removed];
+        }
+      }
       if (cart[id].qty <= 0) delete cart[id];
     }
     renderCart();
@@ -599,18 +712,24 @@
     if (items.length === 0) {
       cartEl.innerHTML = '<div class="cart-empty">Tap items to add</div>';
     } else {
-      cartEl.innerHTML = items.map(it => `
+      cartEl.innerHTML = items.map(it => {
+        const drinkLabel = (it.drinks && it.drinks.length > 0)
+          ? `<div style="font-size:11px;color:#888;margin-top:2px">${it.drinks.join(', ')}</div>`
+          : '';
+        return `
         <div class="cart-row">
           <div>
             <div style="font-weight:500">${it.name}</div>
             <div style="font-size:12px;color:#666">$${it.price.toFixed(2)} × ${it.qty}</div>
+            ${drinkLabel}
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <button data-id="${it.id}" class="rmBtn rm-btn">−</button>
             <span style="font-weight:500;min-width:56px;text-align:right">$${(it.price * it.qty).toFixed(2)}</span>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
       cartEl.querySelectorAll('.rmBtn').forEach(b => {
         b.addEventListener('click', () => removeFromCart(b.dataset.id));
       });
@@ -667,6 +786,7 @@
 
   document.getElementById('clearBtn').addEventListener('click', () => {
     cart = {};
+    sodaTypes = {};
     document.getElementById('cashInput').value = '';
     document.getElementById('statusMsg').textContent = '';
     renderCart();
@@ -766,6 +886,13 @@
       hotdogCombos: hotdogComboQty,
       chips: totalChips,
       sodas: totalSodas,
+      drPepper:     sodaTypes['Dr Pepper']      || 0,
+      dietDrPepper: sodaTypes['Diet Dr Pepper'] || 0,
+      cocaCola:     sodaTypes['Coca Cola']      || 0,
+      dietCoke:     sodaTypes['Diet Coke']      || 0,
+      sprite:       sodaTypes['Sprite']         || 0,
+      pepsi:        sodaTypes['Pepsi']          || 0,
+      water:        sodaTypes['Water']          || 0,
       candy: cart.candy?.qty || 0,
       total: total.toFixed(2),
       cash: cash.toFixed(2),
@@ -831,6 +958,7 @@
     // Reset after a brief pause so cashier sees the success state
     setTimeout(() => {
       cart = {};
+      sodaTypes = {};
       document.getElementById('cashInput').value = '';
       completeBtn.classList.remove('success');
       completeBtn.innerHTML = 'Complete sale';
