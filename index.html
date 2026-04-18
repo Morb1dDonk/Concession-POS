@@ -19,6 +19,27 @@
   h1 { font-size: 20px; margin: 0 0 16px; font-weight: 500; }
   h2 { font-size: 16px; margin: 0 0 12px; font-weight: 500; }
 
+  .title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .title-row h1 { margin: 0; }
+  .settings-btn {
+    background: white;
+    border: 1px solid #d3d1c7;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .settings-btn:hover { background: #f5f5f0; }
+
   .setup-banner {
     background: #faeeda;
     color: #854f0b;
@@ -142,12 +163,47 @@
     font-weight: 500;
   }
 
+  .payment-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-top: 14px;
+    background: white;
+    border-radius: 8px;
+    padding: 4px;
+  }
+  .pay-tab {
+    padding: 10px 4px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.15s;
+  }
+  .pay-tab.active {
+    background: #378ADD;
+    color: white;
+  }
+
   .cash-label {
     font-size: 13px;
     color: #666;
     display: block;
     margin: 12px 0 6px;
   }
+
+  .digital-box {
+    margin-top: 12px;
+    padding: 18px;
+    background: white;
+    border-radius: 8px;
+    text-align: center;
+  }
+  .digital-label { font-size: 13px; color: #666; }
+  .digital-amount { font-size: 22px; font-weight: 500; margin-top: 4px; }
   .cash-input {
     width: 100%;
     padding: 12px;
@@ -182,11 +238,33 @@
     font-size: 16px;
     font-weight: 500;
     cursor: pointer;
+    transition: background 0.2s;
   }
   .complete-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
+  .complete-btn.processing {
+    background: #EF9F27;
+    opacity: 1;
+    cursor: wait;
+  }
+  .complete-btn.success {
+    background: #0f6e56;
+    opacity: 1;
+  }
+  .complete-btn .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   .status-msg {
     margin-top: 8px;
@@ -267,7 +345,10 @@
 <body>
 <div class="container">
 
-  <h1>Concession Stand</h1>
+  <div class="title-row">
+    <h1>Concession Stand</h1>
+    <button id="settingsBtn" class="settings-btn">⚙ Settings</button>
+  </div>
 
   <div id="setupBanner" class="setup-banner">
     <span><strong>Setup needed:</strong> Paste your Google Apps Script URL to enable Sheets sync.</span>
@@ -297,12 +378,27 @@
         <span id="total">$0.00</span>
       </div>
 
-      <label class="cash-label">Cash received</label>
-      <input id="cashInput" class="cash-input" type="number" step="0.01" min="0" placeholder="0.00" inputmode="decimal" />
+      <div class="payment-tabs">
+        <button class="pay-tab active" data-method="cash">Cash</button>
+        <button class="pay-tab" data-method="venmo">Venmo</button>
+        <button class="pay-tab" data-method="zelle">Zelle</button>
+      </div>
 
-      <div class="change-box">
-        <span class="change-label">Change due</span>
-        <span id="change" class="change-amount">$0.00</span>
+      <div id="cashSection">
+        <label class="cash-label">Cash received</label>
+        <input id="cashInput" class="cash-input" type="number" step="0.01" min="0" placeholder="0.00" inputmode="decimal" />
+
+        <div class="change-box">
+          <span class="change-label">Change due</span>
+          <span id="change" class="change-amount">$0.00</span>
+        </div>
+      </div>
+
+      <div id="digitalSection" style="display: none;">
+        <div class="digital-box">
+          <div class="digital-label" id="digitalLabel">Amount to collect via Venmo</div>
+          <div class="digital-amount" id="digitalAmount">$0.00</div>
+        </div>
       </div>
 
       <button id="completeBtn" class="complete-btn" disabled>Complete sale</button>
@@ -340,11 +436,13 @@
 <script>
 (function() {
   const ITEMS = [
-    { id: 'burger', name: 'Hamburger', price: 5, icon: 'burger' },
-    { id: 'hotdog', name: 'Hot Dog',   price: 4, icon: 'hotdog' },
-    { id: 'chips',  name: 'Chips',     price: 1, icon: 'chips' },
-    { id: 'soda',   name: 'Soda',      price: 2, icon: 'soda' },
-    { id: 'candy',  name: 'Candy',     price: 1, icon: 'candy' }
+    { id: 'burger',       name: 'Hamburger',     price: 5, icon: 'burger' },
+    { id: 'hotdog',       name: 'Hot Dog',       price: 4, icon: 'hotdog' },
+    { id: 'chips',        name: 'Chips',         price: 1, icon: 'chips' },
+    { id: 'soda',         name: 'Soda / Water',  price: 2, icon: 'soda' },
+    { id: 'candy',        name: 'Candy',         price: 1, icon: 'candy' },
+    { id: 'burger_combo', name: 'Burger Combo',  price: 7, icon: 'burger_combo' },
+    { id: 'hotdog_combo', name: 'Hot Dog Combo', price: 6, icon: 'hotdog_combo' }
   ];
 
   const ICONS = {
@@ -384,6 +482,54 @@
       <rect x="18" y="20" width="28" height="24" rx="4" fill="#ED93B1"/>
       <path d="M56 26 L46 22 L46 42 L56 38 Z" fill="#D4537E"/>
       <path d="M22 26 L42 38 M22 38 L42 26" stroke="#FBEAF0" stroke-width="2"/>
+    </svg>`,
+    burger_combo: `<svg viewBox="0 0 80 64" width="80" height="64" xmlns="http://www.w3.org/2000/svg">
+      <!-- burger -->
+      <g transform="translate(0,8) scale(0.7)">
+        <path d="M10 22 Q32 6 54 22 L54 26 L10 26 Z" fill="#D85A30"/>
+        <ellipse cx="22" cy="16" rx="2" ry="1.5" fill="#FAEEDA"/>
+        <ellipse cx="32" cy="13" rx="2" ry="1.5" fill="#FAEEDA"/>
+        <ellipse cx="42" cy="16" rx="2" ry="1.5" fill="#FAEEDA"/>
+        <rect x="10" y="28" width="44" height="3" fill="#97C459"/>
+        <rect x="10" y="32" width="44" height="4" fill="#7B3F1A"/>
+        <path d="M10 41 Q32 52 54 41 L54 45 L10 45 Z" fill="#D85A30"/>
+      </g>
+      <!-- soda cup -->
+      <g transform="translate(46,16) scale(0.55)">
+        <path d="M20 12 L44 12 L42 56 L22 56 Z" fill="#378ADD"/>
+        <rect x="20" y="12" width="24" height="3" fill="#185FA5"/>
+        <rect x="29" y="9" width="6" height="4" fill="#888780"/>
+      </g>
+      <!-- chips bag -->
+      <g transform="translate(48,38) scale(0.4)">
+        <path d="M16 10 L48 10 L52 14 L52 54 L12 54 L12 14 Z" fill="#639922"/>
+        <ellipse cx="32" cy="36" rx="10" ry="6" fill="#FAC775"/>
+      </g>
+      <!-- COMBO badge -->
+      <rect x="2" y="50" width="34" height="12" rx="3" fill="#A32D2D"/>
+      <text x="19" y="59" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#FFFFFF">COMBO</text>
+    </svg>`,
+    hotdog_combo: `<svg viewBox="0 0 80 64" width="80" height="64" xmlns="http://www.w3.org/2000/svg">
+      <!-- hotdog -->
+      <g transform="translate(-2,12) scale(0.75)">
+        <rect x="6" y="22" width="52" height="20" rx="10" fill="#EF9F27"/>
+        <rect x="10" y="26" width="44" height="12" rx="6" fill="#D85A30"/>
+        <path d="M12 30 Q20 26 28 30 Q36 34 44 30 Q50 27 52 30" stroke="#FAC775" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </g>
+      <!-- soda cup -->
+      <g transform="translate(46,16) scale(0.55)">
+        <path d="M20 12 L44 12 L42 56 L22 56 Z" fill="#378ADD"/>
+        <rect x="20" y="12" width="24" height="3" fill="#185FA5"/>
+        <rect x="29" y="9" width="6" height="4" fill="#888780"/>
+      </g>
+      <!-- chips bag -->
+      <g transform="translate(48,38) scale(0.4)">
+        <path d="M16 10 L48 10 L52 14 L52 54 L12 54 L12 14 Z" fill="#639922"/>
+        <ellipse cx="32" cy="36" rx="10" ry="6" fill="#FAC775"/>
+      </g>
+      <!-- COMBO badge -->
+      <rect x="2" y="50" width="34" height="12" rx="3" fill="#A32D2D"/>
+      <text x="19" y="59" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#FFFFFF">COMBO</text>
     </svg>`
   };
 
@@ -391,6 +537,7 @@
   let webhookUrl = localStorage.getItem('pos:webhook') || '';
   let stats = loadStats();
   let pendingQueue = JSON.parse(localStorage.getItem('pos:pending') || '[]');
+  let paymentMethod = 'cash';
 
   function loadStats() {
     const today = new Date().toDateString();
@@ -478,21 +625,45 @@
   function updateTotals() {
     const total = getTotal();
     document.getElementById('total').textContent = '$' + total.toFixed(2);
-    const cash = parseFloat(document.getElementById('cashInput').value) || 0;
-    const change = cash - total;
-    const changeEl = document.getElementById('change');
-    if (cash > 0 && cash < total) {
-      changeEl.textContent = 'Short $' + (total - cash).toFixed(2);
-      changeEl.classList.add('short');
-    } else {
-      changeEl.textContent = '$' + Math.max(0, change).toFixed(2);
-      changeEl.classList.remove('short');
-    }
     const completeBtn = document.getElementById('completeBtn');
-    completeBtn.disabled = !(total > 0 && cash >= total);
+
+    if (paymentMethod === 'cash') {
+      const cash = parseFloat(document.getElementById('cashInput').value) || 0;
+      const change = cash - total;
+      const changeEl = document.getElementById('change');
+      if (cash > 0 && cash < total) {
+        changeEl.textContent = 'Short $' + (total - cash).toFixed(2);
+        changeEl.classList.add('short');
+      } else {
+        changeEl.textContent = '$' + Math.max(0, change).toFixed(2);
+        changeEl.classList.remove('short');
+      }
+      completeBtn.disabled = !(total > 0 && cash >= total);
+    } else {
+      document.getElementById('digitalAmount').textContent = '$' + total.toFixed(2);
+      completeBtn.disabled = !(total > 0);
+    }
   }
 
   document.getElementById('cashInput').addEventListener('input', updateTotals);
+
+  // Payment method tabs
+  document.querySelectorAll('.pay-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.pay-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      paymentMethod = tab.dataset.method;
+      const isCash = paymentMethod === 'cash';
+      document.getElementById('cashSection').style.display = isCash ? 'block' : 'none';
+      document.getElementById('digitalSection').style.display = isCash ? 'none' : 'block';
+      if (!isCash) {
+        const label = paymentMethod === 'venmo' ? 'Amount to collect via Venmo' : 'Amount to collect via Zelle';
+        document.getElementById('digitalLabel').textContent = label;
+      }
+      document.getElementById('cashInput').value = '';
+      updateTotals();
+    });
+  });
 
   document.getElementById('clearBtn').addEventListener('click', () => {
     cart = {};
@@ -505,6 +676,11 @@
   document.getElementById('openSetup').addEventListener('click', () => {
     document.getElementById('setupModal').style.display = 'block';
     document.getElementById('webhookInput').value = webhookUrl;
+  });
+  document.getElementById('settingsBtn').addEventListener('click', () => {
+    document.getElementById('setupModal').style.display = 'block';
+    document.getElementById('webhookInput').value = webhookUrl;
+    document.getElementById('setupModal').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
   document.getElementById('cancelSetup').addEventListener('click', () => {
     document.getElementById('setupModal').style.display = 'none';
@@ -551,54 +727,115 @@
 
   document.getElementById('completeBtn').addEventListener('click', async () => {
     const total = getTotal();
-    const cash = parseFloat(document.getElementById('cashInput').value) || 0;
-    const change = cash - total;
+    const completeBtn = document.getElementById('completeBtn');
+    const statusEl = document.getElementById('statusMsg');
+
+    // Payment-specific values
+    let cash = 0;
+    let change = 0;
+    if (paymentMethod === 'cash') {
+      cash = parseFloat(document.getElementById('cashInput').value) || 0;
+      change = cash - total;
+    } else {
+      cash = total; // exact amount collected digitally
+      change = 0;
+    }
+
     const itemsList = Object.values(cart);
     const itemSummary = itemsList.map(it => `${it.qty}x ${it.name}`).join(', ');
     const itemCount = itemsList.reduce((s, it) => s + it.qty, 0);
 
+    // Break combos into component items for inventory tracking.
+    // Burger Combo = burger + chips + soda
+    // Hot Dog Combo = hotdog + chips + soda
+    const burgerComboQty = cart.burger_combo?.qty || 0;
+    const hotdogComboQty = cart.hotdog_combo?.qty || 0;
+    const totalBurgers = (cart.burger?.qty || 0) + burgerComboQty;
+    const totalHotdogs = (cart.hotdog?.qty || 0) + hotdogComboQty;
+    const totalChips   = (cart.chips?.qty  || 0) + burgerComboQty + hotdogComboQty;
+    const totalSodas   = (cart.soda?.qty   || 0) + burgerComboQty + hotdogComboQty;
+
     const sale = {
       timestamp: new Date().toISOString(),
+      paymentMethod: paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1),
       items: itemSummary,
       itemCount,
-      hamburgers: cart.burger?.qty || 0,
-      hotdogs: cart.hotdog?.qty || 0,
-      chips: cart.chips?.qty || 0,
-      sodas: cart.soda?.qty || 0,
+      hamburgers: totalBurgers,
+      hotdogs: totalHotdogs,
+      burgerCombos: burgerComboQty,
+      hotdogCombos: hotdogComboQty,
+      chips: totalChips,
+      sodas: totalSodas,
       candy: cart.candy?.qty || 0,
       total: total.toFixed(2),
       cash: cash.toFixed(2),
       change: change.toFixed(2)
     };
 
-    const statusEl = document.getElementById('statusMsg');
+    // --- PROCESSING STATE ---
+    completeBtn.disabled = true;
+    completeBtn.classList.add('processing');
+    completeBtn.classList.remove('success');
+    completeBtn.innerHTML = '<span class="spinner"></span>Sale processing…';
     statusEl.className = 'status-msg';
+    statusEl.textContent = '';
 
+    let syncedOk = false;
     if (webhookUrl) {
       try {
         await sendSale(sale);
-        statusEl.classList.add('status-ok');
-        statusEl.textContent = '✓ Sale recorded — Change: $' + Math.max(0, change).toFixed(2);
+        syncedOk = true;
       } catch (e) {
         pendingQueue.push(sale);
         savePending();
-        statusEl.classList.add('status-warn');
-        statusEl.textContent = 'Saved locally — will sync when online. Change: $' + Math.max(0, change).toFixed(2);
       }
     } else {
-      statusEl.classList.add('status-warn');
-      statusEl.textContent = '✓ Change: $' + Math.max(0, change).toFixed(2) + ' (no Sheets sync configured)';
+      // No webhook configured — still count as "complete" locally
+      syncedOk = true;
     }
 
+    // --- SUCCESS STATE ---
+    completeBtn.classList.remove('processing');
+    completeBtn.classList.add('success');
+    completeBtn.innerHTML = '✓ Sale complete';
+
+    if (paymentMethod === 'cash') {
+      statusEl.classList.add(syncedOk ? 'status-ok' : 'status-warn');
+      const changeText = change > 0 ? ` — Change: $${change.toFixed(2)}` : '';
+      if (!webhookUrl) {
+        statusEl.textContent = `Sale complete${changeText} (no Sheets sync configured)`;
+      } else if (syncedOk) {
+        statusEl.textContent = `Sent to Google Sheets${changeText}`;
+      } else {
+        statusEl.textContent = `Saved locally — will sync when online${changeText}`;
+      }
+    } else {
+      const payName = sale.paymentMethod;
+      statusEl.classList.add(syncedOk ? 'status-ok' : 'status-warn');
+      if (!webhookUrl) {
+        statusEl.textContent = `${payName} sale recorded (no Sheets sync configured)`;
+      } else if (syncedOk) {
+        statusEl.textContent = `${payName} sale sent to Google Sheets`;
+      } else {
+        statusEl.textContent = `${payName} sale saved locally — will sync when online`;
+      }
+    }
+
+    // Update daily stats
     stats.sales++;
     stats.revenue += total;
     stats.items += itemCount;
     saveStats();
     refreshStats();
 
-    cart = {};
-    document.getElementById('cashInput').value = '';
-    renderCart();
+    // Reset after a brief pause so cashier sees the success state
+    setTimeout(() => {
+      cart = {};
+      document.getElementById('cashInput').value = '';
+      completeBtn.classList.remove('success');
+      completeBtn.innerHTML = 'Complete sale';
+      renderCart();
+    }, 1800);
   });
 
   function refreshStats() {
